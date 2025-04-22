@@ -1,22 +1,19 @@
 #[tokio::main]
 async fn main() {
-    let mut args_list = std::env::args();
-    let (_, oauth) = (args_list.next().unwrap(), args_list.next().unwrap());
-    println!(
-        "Reply for IAM-token request: {:?}",
-        get_token(oauth.as_str()).await
-    );
+    let oauth = std::env::args().nth(1).unwrap();
+    let from_yandex = get_token(oauth).await.unwrap();
+    println!("Reply for IAM-token request: {:?}", from_yandex);
 }
 
-pub async fn get_token(oauth: &str) -> Option<String> {
+pub async fn get_token(oauth: impl AsRef<str>) -> Option<String> {
+    const YANDEX_FETCH_IAM_URL: &str = "https://iam.api.cloud.yandex.net/iam/v1/tokens";
     const IAM_TOKEN_KEY: &str = "iamToken";
     const YANDEX_PASSPORT: &str = "yandexPassportOauthToken";
 
+    let oauth = oauth.as_ref();
     let client = reqwest::Client::new();
     let query = [(YANDEX_PASSPORT, oauth)];
-    let req = client
-        .post("https://iam.api.cloud.yandex.net/iam/v1/tokens")
-        .query(&query);
+    let req = client.post(YANDEX_FETCH_IAM_URL).query(&query);
     let resp = req
         .send()
         .await
