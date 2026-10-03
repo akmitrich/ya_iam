@@ -1,5 +1,3 @@
-use serde_json::{Value, json};
-
 #[tokio::main]
 async fn main() {
     let key_path = std::env::args().nth(1).unwrap();
@@ -9,8 +7,9 @@ async fn main() {
     println!("Reply for IAM-token request: {:?}", from_yandex);
 }
 
+const YANDEX_FETCH_IAM_URL: &str = "https://iam.api.cloud.yandex.net/iam/v1/tokens";
+
 pub async fn get_token(jwt: impl AsRef<str>) -> Option<String> {
-    const YANDEX_FETCH_IAM_URL: &str = "https://iam.api.cloud.yandex.net/iam/v1/tokens";
     const IAM_TOKEN_KEY: &str = "iamToken";
 
     let client = reqwest::Client::new();
@@ -47,13 +46,9 @@ pub async fn get_token(jwt: impl AsRef<str>) -> Option<String> {
 }
 
 #[derive(Debug, serde::Deserialize)]
-#[allow(unused)]
 struct Keys {
-    created_at: String,
     id: String,
     service_account_id: String,
-    key_algorithm: String,
-    public_key: String,
     private_key: String,
 }
 
@@ -62,25 +57,39 @@ impl Keys {
         let encoding_key =
             jsonwebtoken::EncodingKey::from_rsa_pem(self.private_key.as_bytes()).unwrap();
         let jwt = jsonwebtoken::encode(
-            &jsonwebtoken::Header {
-                alg: jsonwebtoken::Algorithm::PS256,
-                kid: Some(self.id.to_owned()),
-                ..Default::default()
-            },
-            &self.claims(),
+            &self.header(),
+            &Claims::new(&self.service_account_id),
             &encoding_key,
         );
-        println!("Key: {jwt:?}",);
+        println!("Token to exchange: {jwt:?}",);
         jwt.unwrap()
     }
 
-    fn claims(&self) -> Value {
+    fn header(&self) -> jsonwebtoken::Header {
+        jsonwebtoken::Header {
+            alg: jsonwebtoken::Algorithm::PS256,
+            kid: Some(self.id.to_owned()),
+            ..Default::default()
+        }
+    }
+}
+
+#[derive(Debug, serde::Serialize)]
+struct Claims<'a> {
+    iss: &'a str,
+    aud: &'a str,
+    iat: u64,
+    exp: u64,
+}
+
+impl<'a> Claims<'a> {
+    pub fn new(service_account_id: &'a str) -> Self {
         let now = jsonwebtoken::get_current_timestamp();
-        json!({
-            "iss": &self.service_account_id,
-            "aud": "https://iam.api.cloud.yandex.net/iam/v1/tokens",
-            "iat": now,
-            "exp": now+60
-        })
+        Self {
+            iss: service_account_id,
+            aud: YANDEX_FETCH_IAM_URL,
+            iat: now,
+            exp: now + 60,
+        }
     }
 }
